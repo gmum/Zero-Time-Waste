@@ -1,6 +1,6 @@
 ### Source Code for "Zero Time Waste: Recycling Predictions in Early Exit Neural Networks"
 
-Paper link: TODO
+Paper link: [https://arxiv.org/pdf/2106.05409.pdf](https://arxiv.org/pdf/2106.05409.pdf)
 
 The repository is split into two parts: supervised learning experiments (directory `ztw`) and reinforcement learning experiments (directory `ztw_rl`). The supervised learning code is based on the [code](https://github.com/yigitcankaya/Shallow-Deep-Networks) from the [Shallow-Deep-Networks paper](https://arxiv.org/abs/1810.07052).
 
