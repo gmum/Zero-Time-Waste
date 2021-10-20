@@ -1,7 +1,8 @@
+from itertools import chain
+
 import torch
 from torch import nn
 from torchvision import models
-from itertools import chain
 
 import aux_funcs as af
 import model_funcs as mf
@@ -15,7 +16,8 @@ class ResNet50_SDN(nn.Module):
 
         assert self.args.heads_per_ensemble == 1
         self.core_model = models.resnet50(pretrained=True, progress=True)
-        self.num_classes = self.core_model.fc.out_features
+        # self.num_classes = self.core_model.fc.out_features
+        self.num_classes = params['num_classes']
         self.train_func = mf.sdn_train
         self.augment_training = params['augment_training']
 
@@ -25,6 +27,12 @@ class ResNet50_SDN(nn.Module):
         self.first_internal = True
 
         self.shift = args.head_shift
+
+        if self.num_classes != 1000:
+            self.core_model.fc = nn.Linear(self.core_model.fc.in_features, self.num_classes)
+            self.fc_trained = False
+        else:
+            self.fc_trained = True
 
         self.output_ics = nn.ModuleList()
         #

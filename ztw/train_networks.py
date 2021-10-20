@@ -5,13 +5,9 @@
 import argparse
 import copy
 import os
-import random
-import time
 
-import neptune
-import numpy as np
+import neptune.new as neptune
 import torch
-from tqdm import trange
 
 import aux_funcs as af
 import network_architectures as arcs
@@ -82,10 +78,11 @@ def train(args, models_path, untrained_models, sdn=False, run_ensb=False, ic_onl
             tags += [args.tag]
 
         print('Training: {}...'.format(trained_model_name))
-        neptune.create_experiment(name=trained_model_name,
-                                  params=vars(args),
-                                  upload_source_files='*.py',
-                                  tags=tags)
+        run = neptune.init(name=trained_model_name,
+                           source_files='*.py',
+                           tags=tags)
+        run['parameters'] = vars(args)
+        args.run = run
         trained_model.to(device)
         results = trained_model.train_func(args,
                                            trained_model,
@@ -172,8 +169,8 @@ def train_run_ensb(args, models_path, networks, ic_only=False, device='cpu'):
         base_model.eval()
 
         # train_loader = dataset.eval_train_loader if args.dataset != "imagenet" else dataset.subset_train_loader
-        train_loader = dataset.eval_train_loader
-        # train_loader = dataset.eval_aug_train_loader
+        # train_loader = dataset.eval_train_loader
+        train_loader = dataset.eval_aug_train_loader
         # train_loader = dataset.subset_train_loader
 
         train_logits, train_last_logits, train_labels = get_logits(args, base_model,
@@ -245,6 +242,7 @@ def train_models(args, steps, task, models, models_path, device='cpu'):
     if 'running_ensb' in steps:
         train_run_ensb(args, models_path, sdns, ic_only=True, device=device)
 
+
 # for backdoored models, load a backdoored CNN and convert it to an SDN via IC-only strategy
 def sdn_ic_only_backdoored(args, device):
     params = arcs.create_vgg16bn(None, 'cifar10', None, True)
@@ -279,9 +277,6 @@ def main(args):
     af.create_path(trained_models_dir)
     af.set_logger((os.path.join(trained_models_dir, str(random_seed))))
 
-    # TODO change this if you fork the project
-    neptune.init('user/conditional-computing')
-
     train_models(args, args.training_steps, args.dataset, args.arch, models_path, device)
 
     # Commented out since it is not important right now
@@ -290,11 +285,11 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', '-d', type=str, choices=['cifar10', 'cifar100', 'tinyimagenet', 'imagenet'])
+    parser.add_argument('--dataset', '-d', type=str,
+                        choices=['cifar10', 'cifar100', 'tinyimagenet', 'imagenet', 'oct2017'])
     parser.add_argument('--arch',
                         '-a',
                         type=str,
-                        nargs='+',
                         choices=['vgg16bn', 'resnet56', 'wideresnet32_4', 'mobilenet', 'tv_resnet'])
     parser.add_argument('--training_steps',
                         '-t',
@@ -302,7 +297,8 @@ if __name__ == '__main__':
                         nargs='+',
                         choices=['cnn', 'sdn_ic', 'sdn_full', 'running_ensb'],
                         default=['cnn', 'sdn_ic', 'sdn_full', 'running_ensb'])
-    parser.add_argument('--head_arch', type=str, nargs='*', choices=['conv', 'conv_less_ch', 'avg_pool', 'max_pool', 'sdn_pool', 'fc'])
+    parser.add_argument('--head_arch', type=str, nargs='*',
+                        choices=['conv', 'conv_less_ch', 'avg_pool', 'max_pool', 'sdn_pool', 'fc'])
     parser.add_argument('--sequential_training', action='store_true', help='train each ensemble member sequentially')
     parser.add_argument('--heads_per_ensemble', '-e', type=int, default=1)
     parser.add_argument('--seed', '-s', type=int)
@@ -329,17 +325,20 @@ if __name__ == '__main__':
     parser.add_argument('--alpha', type=float, help='alpha scaler for weight running ensembles', default=0.)
     parser.add_argument('--parent_id', type=str, help='id of neptune parent experiment')
     parser.add_argument('--heads', type=str, default='original',
-            choices=['all', 'original', 'half', 'third', 'quarter'])
+                        choices=['all', 'original', 'half', 'third', 'quarter'])
     parser.add_argument('--detach_norm', type=str, default=None, choices=['layernorm'])
     parser.add_argument('--head_ids', type=int, nargs="+", help='head number to train with running ensembles')
     parser.add_argument('--examples_num', type=int, help='How many examples from the dataset to use')
     parser.add_argument('--run_ensb_epochs', type=int, default=501)
     parser.add_argument('--run_ensb_dataset', type=str, default='train')
-    parser.add_argument('--run_ensb_type', choices=['geometric', 'additive', 'standard'], default='geometric', help='ensemble type')
-    parser.add_argument('--validation_dataset', action='store_true', help='Use validation dataset for training (for running ensembles)')
+    parser.add_argument('--run_ensb_type', choices=['geometric', 'additive', 'standard'], default='geometric',
+                        help='ensemble type')
+    parser.add_argument('--validation_dataset', action='store_true',
+                        help='Use validation dataset for training (for running ensembles)')
     parser.add_argument('--head_shift', type=int, default=0)
     parser.add_argument('--lr_scaler', type=float, default=1.)
     parser.add_argument('--tag', type=str, help="Additional tag for neptune")
     parser.add_argument('--suffix', type=str, help="Suffix for model name")
+    parser.add_argument('--relearn_final_layer', action='store_true')
     args = parser.parse_args()
     main(args)

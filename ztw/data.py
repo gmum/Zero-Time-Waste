@@ -8,7 +8,7 @@ import os
 import torch
 from PIL import Image
 from torch.utils.data import sampler, Subset
-from torchvision import datasets, transforms, utils
+from torchvision import datasets, transforms
 
 
 class AddTrigger(object):
@@ -51,7 +51,7 @@ def reinit_train_loaders(dataset, weights=None):
                                                                 shuffle=False,
                                                                 num_workers=8)
 
-    print("Imagenet len", len(dataset.trainset))
+    print(f"Dataset len {len(dataset.trainset)}")
     subset_train = torch.utils.data.Subset(dataset.trainset, list(range(1000)))
     dataset.subset_train_loader = torch.utils.data.DataLoader(subset_train,
                                                               batch_size=dataset.batch_size,
@@ -163,7 +163,8 @@ class ImageNet:
             [transforms.RandomResizedCrop(224),
              transforms.RandomHorizontalFlip(),
              transforms.ToTensor(), normalize])
-        self.normalized = transforms.Compose([transforms.Resize(256), transforms.CenterCrop(224), transforms.ToTensor(), normalize])
+        self.normalized = transforms.Compose(
+            [transforms.Resize(256), transforms.CenterCrop(224), transforms.ToTensor(), normalize])
 
         # TODO fix hardcoded path
         data_path = '/shared/sets/datasets/vision/ImageNet'
@@ -186,7 +187,7 @@ class ImageFolderWithPaths(datasets.ImageFolder):
     def __getitem__(self, index):
         original_tuple = super(ImageFolderWithPaths, self).__getitem__(index)
         path = self.imgs[index][0]
-        tuple_with_path = (original_tuple + (path, ))
+        tuple_with_path = (original_tuple + (path,))
         return tuple_with_path
 
 
@@ -237,6 +238,39 @@ class TinyImagenet():
         reinit_train_loaders(self, weights)
 
 
+class OCT2017:
+    def __init__(self, batch_size=64):
+        self.batch_size = batch_size
+        self.img_size = 224
+        self.num_classes = 4
+
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        self.augmented = transforms.Compose(
+            [transforms.Resize(255),
+             transforms.CenterCrop(224),
+             transforms.RandomHorizontalFlip(),
+             transforms.ToTensor(), normalize])
+        self.normalized = transforms.Compose(
+            [transforms.Resize(255), transforms.CenterCrop(224), transforms.ToTensor(), normalize])
+
+        # TODO fix hardcoded path
+        train_path = '/shared/sets/datasets/vision/OCT2017/train'
+        test_path = '/shared/sets/datasets/vision/OCT2017/test'
+        self.aug_trainset = datasets.ImageFolder(train_path, transform=self.augmented)
+        self.trainset = datasets.ImageFolder(train_path, transform=self.normalized)
+
+        self.weighted_loaders(None)
+
+        self.testset = datasets.ImageFolder(test_path, transform=self.normalized)
+        self.test_loader = torch.utils.data.DataLoader(self.testset,
+                                                       batch_size=batch_size,
+                                                       shuffle=False,
+                                                       num_workers=4)
+
+    def weighted_loaders(self, weights):
+        reinit_train_loaders(self, weights)
+
+
 def get_mean_and_std(dataset):
     '''Compute the mean and std value of dataset.'''
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=1, num_workers=4)
@@ -279,7 +313,7 @@ def create_val_folder():
             os.rename(os.path.join(path, img), os.path.join(newpath, img))
 
 
-def accuracy(output, target, topk=(1, )):
+def accuracy(output, target, topk=(1,)):
     """Computes the precision@k for the specified values of k"""
     with torch.no_grad():
         maxk = max(topk)
@@ -314,6 +348,7 @@ def accuracy_w_preds(output, target, topk=(1, 5)):
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
+
     def __init__(self):
         self.reset()
 

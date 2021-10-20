@@ -25,14 +25,11 @@ plt.rcParams.update({'font.size': 13})
 import re
 from bisect import bisect_right
 
-from torch.autograd import Variable
-from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss
 from torch.optim import SGD, Adam
 from torch.optim.lr_scheduler import _LRScheduler
 
-import model_funcs as mf
 import network_architectures as arcs
-from data import CIFAR10, CIFAR100, ImageNet, TinyImagenet
+from data import CIFAR10, CIFAR100, ImageNet, TinyImagenet, OCT2017
 from profiler import profile, profile_sdn
 from architectures.SDNs.tv_ResNet_50_SDN import ResNet50_SDN
 
@@ -63,7 +60,7 @@ class Logger(object):
 
 def set_logger(log_file):
     sys.stdout = Logger(log_file, 'out')
-    #sys.stderr = Logger(log_file, 'err')
+    # sys.stderr = Logger(log_file, 'err')
 
 
 # the learning rate scheduler
@@ -181,7 +178,7 @@ class InternalClassifier(nn.Module):
                     input_channels = output_channels
                     if layer_type == 'conv_less_ch':
                         output_channels = input_channels // 4
-                    if args.dataset == 'imagenet':
+                    if args.dataset == 'imagenet' or args.dataset == 'oct2017':
                         if input_size > 8:
                             stride, padding = 2, 1
                             input_size = input_size // 2
@@ -224,7 +221,7 @@ class InternalClassifier(nn.Module):
                         sdn_pool = SDNPool(input_size, output_channels, pool_size=args.size_after_pool)
                     self.conv_layers_ens[idx].append(sdn_pool)
                     self.conv_layers_ens[idx].append(nn.Flatten())
-                    #red_kernel_size = -1 # to test the effects of the feature reduction
+                    # red_kernel_size = -1 # to test the effects of the feature reduction
                     input_dim = sdn_pool.after_pool_dim + prev_dim
                 elif layer_type == 'linear':
                     assert input_dim is not None
@@ -244,16 +241,13 @@ class InternalClassifier(nn.Module):
             if self.detach:
                 prev_output = [o.detach() for o in prev_output]
             prev_output = [self.detach_norm(o) for o in prev_output]
-
         outputs = []
         for idx, (conv_layers, fc_layers) in enumerate(zip(self.conv_layers_ens, self.fc_layers_ens)):
             x = in_x
             for conv_layer in conv_layers:
                 x = conv_layer(x)
-
             if prev_output is not None:
                 x = torch.cat([x, prev_output[idx]], -1)
-
             for fc_layer in fc_layers:
                 x = fc_layer(x)
             outputs += [x]
@@ -322,6 +316,8 @@ def get_dataset(args, dataset, batch_size=128, add_trigger=False):
         return load_tinyimagenet(args, batch_size)
     elif dataset == 'imagenet':
         return ImageNet(batch_size // 2)
+    elif dataset == 'oct2017':
+        return OCT2017(batch_size // 2)
 
 
 def load_cifar10(args, batch_size, add_trigger=False):
@@ -356,7 +352,7 @@ def get_output_relative_depths(model):
 
     total_depth += model.end_depth
 
-    #output_depths.append(total_depth)
+    # output_depths.append(total_depth)
 
     return np.array(output_depths) / total_depth, total_depth
 
@@ -658,10 +654,18 @@ def freeze(model, mode, boosting=False):
                 else:
                     freeze_bn(module)
     elif mode == 'nothing':
-        for param in model.parameters():
+        for param in model.modules():
             param.requires_grad = True
         for name, module in model.named_modules():
             freeze_bn(module, False)
+    elif mode == 'final_layer_only':
+        for param in model.parameters():
+            param.requires_grad = False
+        for name, module in model.named_modules():
+            freeze_bn(module)
+        ord_modules = list(model.modules())
+        for param in ord_modules[-1].parameters():
+            param.requires_grad = True
     else:
         raise ValueError(f'mode argument value incorrect: {mode}')
 

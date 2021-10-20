@@ -1,7 +1,6 @@
-torch==1.7.1+cu101
-torchaudio==0.7.2
-torchtext==0.8.1
-torchvision==0.8.2+cu101
+torch==1.9.1
+torchaudio==0.9.1
+torchvision==0.10.1
 stable-baselines3[extra,tests,docs]>=1.0
 box2d-py==2.3.8
 pybullet

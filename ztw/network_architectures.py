@@ -8,10 +8,8 @@ import os.path
 import pickle
 
 import neptune
-import numpy as np
 import torch
 
-import aux_funcs as af
 from architectures.CNNs.MobileNet import MobileNet
 from architectures.CNNs.ResNet import ResNet
 from architectures.CNNs.VGG import VGG
@@ -21,8 +19,8 @@ from architectures.SDNs.MobileNet_SDN import MobileNet_SDN
 from architectures.SDNs.ResNet_SDN import ResNet_SDN
 from architectures.SDNs.VGG_SDN import VGG_SDN
 from architectures.SDNs.WideResNet_SDN import WideResNet_SDN
-from architectures.weighted_avg_model import WeightedAverage
 from architectures.SDNs.tv_ResNet_50_SDN import ResNet50_SDN
+from architectures.weighted_avg_model import WeightedAverage
 
 
 def canonical_name(args, model_name):
@@ -130,16 +128,16 @@ def create_resnet56(args, models_path, task, save_type, get_params=False):
     model_params['num_blocks'] = [9, 9, 9]
     if args.heads == 'original':
         model_params['add_ic'] = [[0, 0, 0, 1, 0, 0, 0, 1, 0], [0, 0, 1, 0, 0, 0, 1, 0, 0],
-                                [0, 1, 0, 0, 0, 1, 0, 0, 0]]  # 15, 30, 45, 60, 75, 90 percent of GFLOPs
+                                  [0, 1, 0, 0, 0, 1, 0, 0, 0]]  # 15, 30, 45, 60, 75, 90 percent of GFLOPs
     elif args.heads == 'all':
         model_params['add_ic'] = [[1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1, 1],
-                                [1, 1, 1, 1, 1, 1, 1, 1, 1]]
+                                  [1, 1, 1, 1, 1, 1, 1, 1, 1]]
     elif args.heads == 'half':
         model_params['add_ic'] = [[1, 0, 1, 0, 1, 0, 1, 0, 1], [1, 0, 1, 0, 1, 0, 1, 0, 1],
-                                [1, 0, 1, 0, 1, 0, 1, 0, 1]]
+                                  [1, 0, 1, 0, 1, 0, 1, 0, 1]]
     elif args.heads == 'full+half':
         model_params['add_ic'] = [[1, 1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 0, 1, 0, 1],
-                                [1, 0, 1, 0, 1, 0, 1, 0, 1]]
+                                  [1, 0, 1, 0, 1, 0, 1, 0, 1]]
     model_name = '{}_resnet56'.format(task)
 
     model_params['network_type'] = 'resnet56'
@@ -166,7 +164,7 @@ def create_wideresnet32_4(args, models_path, task, save_type, get_params=False):
 
     if args.heads == 'original':
         model_params['add_ic'] = [[0, 0, 1, 0, 1], [0, 1, 0, 1, 0], [1, 0, 1, 0,
-                                                                    0]]  # 15, 30, 45, 60, 75, 90 percent of GFLOPs
+                                                                     0]]  # 15, 30, 45, 60, 75, 90 percent of GFLOPs
     elif args.heads == 'all':
         model_params['add_ic'] = [[1, 1, 1, 1, 1], [1, 1, 1, 1, 1], [1, 1, 1, 1, 1]]
     elif args.heads == 'half':
@@ -228,8 +226,6 @@ def create_tv_resnet(args, models_path, task, save_type, get_params=False):
     return save_networks(args, model_name, model_params, models_path, save_type)
 
 
-
-
 def get_task_params(task: str):
     if task.startswith('cifar100'):
         return cifar100_params()
@@ -239,6 +235,8 @@ def get_task_params(task: str):
         return tiny_imagenet_params()
     elif task.startswith('imagenet'):
         return imagenet_params()
+    elif task.startswith('oct2017'):
+        return oct2017_params()
 
 
 def cifar10_params():
@@ -273,6 +271,14 @@ def imagenet_params():
     return model_params
 
 
+def oct2017_params():
+    model_params = {}
+    model_params['task'] = 'oct2017'
+    model_params['input_size'] = 224
+    model_params['num_classes'] = 4
+    return model_params
+
+
 def get_lr_params(model_params, args=None):
     model_params['momentum'] = 0.9
 
@@ -285,20 +291,32 @@ def get_lr_params(model_params, args=None):
         model_params['weight_decay'] = 0.0001
 
     model_params['learning_rate'] = 0.1
-    if 'tv_resnet' in network_type:
+    if model_params['task'] == 'imagenet':
         model_params['epochs'] = 0
+        model_params['milestones'] = []
+    elif model_params['task'] == 'oct2017':
+        model_params['learning_rate'] = 0.01
+        model_params['epochs'] = 20
+        model_params['milestones'] = [5, 10, 15]
     else:
         model_params['epochs'] = 100
-    model_params['milestones'] = [35, 60, 85]
+        model_params['milestones'] = [35, 60, 85]
     model_params['gammas'] = [0.1, 0.1, 0.1]
 
     # SDN ic_only training params
     model_params['ic_only'] = {}
-    if 'tv_resnet' in network_type:
+    if model_params['task'] == 'imagenet':
         model_params['ic_only']['epochs'] = 40
-        model_params['ic_only']['learning_rate'] = 1e-5 * args.lr_scaler  # lr for full network training after sdn modification
+        model_params['ic_only'][
+            'learning_rate'] = 1e-5 * args.lr_scaler  # lr for full network training after sdn modification
         model_params['ic_only']['milestones'] = [20, 30]
         model_params['ic_only']['gammas'] = [0.1, 0.1]
+    elif model_params['task'] == 'oct2017':
+        model_params['ic_only']['epochs'] = 20
+        model_params['ic_only'][
+            'learning_rate'] = 1e-5 * args.lr_scaler  # lr for full network training after sdn modification
+        model_params['ic_only']['milestones'] = [5, 10, 15]
+        model_params['ic_only']['gammas'] = [0.1, 0.1, 0.1]
     else:
         if model_params['task'] == 'tinyimagenet':
             model_params['ic_only']['milestones'] = [15, 40]
@@ -350,11 +368,11 @@ def save_model(args,
 
     if total_ops is not None:
         torch.save(total_ops, f'{network_path}/total_ops.pt')
-        neptune.log_artifact(f'{network_path}/total_ops.pt', 'total_ops')
+        args.run['artifacts/total_ops'].upload(f'{network_path}/total_ops.pt')
 
     if total_params is not None:
         torch.save(total_params, f'{network_path}/total_params.pt')
-        neptune.log_artifact(f'{network_path}/total_params.pt', 'total_params')
+        args.run['artifacts/total_params'].upload(f'{network_path}/total_params.pt')
 
     if train_outputs is not None:
         logits, last_logits, labels = train_outputs
@@ -364,6 +382,9 @@ def save_model(args,
         torch.save(labels, f'{network_path}/train_labels.pt')
         if args.save_train_logits:
             print(f'Saving train logits to neptune...')
+            args.run['artifacts/train_logits'].upload(f'{network_path}/train_logits.pt')
+            args.run['artifacts/train_last_logits'].upload(f'{network_path}/train_last_logits.pt')
+            args.run['artifacts/train_labels'].upload(f'{network_path}/train_labels.pt')
             neptune.log_artifact(f'{network_path}/train_logits.pt', 'train_logits')
             neptune.log_artifact(f'{network_path}/train_last_logits.pt', 'train_last_logits')
             neptune.log_artifact(f'{network_path}/train_labels.pt', 'train_labels')
@@ -376,16 +397,16 @@ def save_model(args,
         torch.save(labels, f'{network_path}/test_labels.pt')
         if args.save_test_logits:
             print(f'Saving test logits to neptune...')
-            neptune.log_artifact(f'{network_path}/test_logits.pt', 'test_logits')
-            neptune.log_artifact(f'{network_path}/test_last_logits.pt', 'test_last_logits')
-            neptune.log_artifact(f'{network_path}/test_labels.pt', 'test_labels')
+            args.run['artifacts/test_logits'].upload(f'{network_path}/test_logits.pt')
+            args.run['artifacts/test_last_logits'].upload(f'{network_path}/test_last_logits.pt')
+            args.run['artifacts/test_labels'].upload(f'{network_path}/test_labels.pt')
 
     if hasattr(model, 'classifier_weights'):
         classifier_weights = model.classifier_weights
         print(f'Saving boosting weights to local filesystem...')
         torch.save(classifier_weights, f'{network_path}/boosting_weights.pt')
         print(f'Saving boosting weights to neptune...')
-        neptune.log_artifact(f'{network_path}/boosting_weights.pt', 'boosting_weights')
+        args.run['artifacts/boosting_weights'].upload(f'{network_path}/boosting_weights.pt')
 
     print(f'Model saved')
 

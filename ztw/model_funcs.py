@@ -9,7 +9,6 @@ import time
 from collections import Counter
 from random import choice, shuffle
 
-import neptune
 import numpy as np
 import torch
 import torch.nn as nn
@@ -43,7 +42,7 @@ def sdn_training_step(args, optimizer, model, coeffs, batch, device, run_i=None)
             total_loss += cur_loss
 
     total_loss += criterion(output[-1], b_y)
-    neptune.log_metric(f'loss run {run_i}', current_step, total_loss)
+    args.run[f'loss run {run_i}'].log(total_loss, step=current_step)
     total_loss.backward()
     optimizer.step()  # apply gradients
     current_step += 1
@@ -63,6 +62,10 @@ def sdn_ic_only_step(args, optimizer, model, batch, device, run_i=None):
         last_output = output[-1]
         q = F.softmax(last_output / args.temperature, dim=1)
 
+
+    losses = []
+
+    output_idx = 0
     for ensemble_id, cur_ensemble in enumerate(output):
         if ensemble_id == model.num_output - 1:  # last output
             break
@@ -71,8 +74,8 @@ def sdn_ic_only_step(args, optimizer, model, batch, device, run_i=None):
                 p = F.log_softmax(cur_output / args.temperature, dim=1)
                 l_kl = F.kl_div(p, q, size_average=False) * args.temperature**2 / last_output.size(0)
                 l_ce = F.cross_entropy(cur_output, b_y)
-                neptune.log_metric(f'run {run_i} ens {ensemble_id} net {output_id} KL loss', current_step, l_kl)
-                neptune.log_metric(f'run {run_i} ens {ensemble_id} net {output_id} CE loss', current_step, l_ce)
+                args.run[f'run {run_i} ens {ensemble_id} net {output_id} KL loss'].log(l_kl, step=current_step)
+                args.run[f'run {run_i} ens {ensemble_id} net {output_id} CE loss'].log(l_ce, step=current_step)
                 l_kd = l_kl * args.lamb + l_ce * (1 - args.lamb)
                 total_loss += l_kd
             elif args.loss == 'bcewl':
@@ -92,14 +95,21 @@ def sdn_ic_only_step(args, optimizer, model, batch, device, run_i=None):
                 total_loss += cur_loss
             else:
                 cur_loss = F.cross_entropy(cur_output, b_y)
+
+                # grad = torch.autograd.grad(cur_loss, first_ic_params, retain_graph=True, create_graph=True)
+                # grads += [grad]
+                # print(output_idx, grad)
+                output_idx += 1
                 total_loss += cur_loss
 
-    neptune.log_metric(f'run {run_i} loss', current_step, total_loss)
+
+    args.run[f'run {run_i} loss'].log(total_loss, step=current_step)
     total_loss.backward()
     optimizer.step()  # apply gradients
     current_step += 1
+    cosine_sim = 0.
 
-    return total_loss
+    return total_loss, cosine_sim
 
 
 def sdn_boosting_step(args, optimizer, model, batch, device, head_i=None):
@@ -122,8 +132,8 @@ def sdn_boosting_step(args, optimizer, model, batch, device, head_i=None):
                 p = F.log_softmax(cur_output / args.temperature, dim=1)
                 l_kl = F.kl_div(p, q, size_average=False) * args.temperature**2 / last_output.size(0)
                 l_ce = F.cross_entropy(cur_output, b_y)
-                neptune.log_metric(f'head {ensemble_id} net {output_id} KL loss', current_step, l_kl)
-                neptune.log_metric(f'head {ensemble_id} net {output_id} CE loss', current_step, l_ce)
+                args.run[f'head {ensemble_id} net {output_id} KL loss'].log(l_kl, step=current_step)
+                args.run[f'head {ensemble_id} net {output_id} CE loss'].log(l_ce, step=current_step)
                 l_kd = l_kl * args.lamb + l_ce * (1 - args.lamb)
                 total_loss += l_kd
             elif args.loss == 'bcewl':
@@ -145,7 +155,7 @@ def sdn_boosting_step(args, optimizer, model, batch, device, head_i=None):
                 cur_loss = F.cross_entropy(cur_output, b_y)
                 total_loss += cur_loss
 
-    neptune.log_metric(f'head {head_i} loss', current_step, total_loss)
+    args.run[f'head {head_i} loss'].log(total_loss, step=current_step)
     total_loss.backward()
     optimizer.step()  # apply gradients
     current_step += 1
@@ -306,7 +316,7 @@ def sdn_train(args, model, data, epochs, optimization_params, lr_schedule_params
                 cur_lr = af.get_lr(optimizer)
                 print('\nEpoch: {}/{}'.format(epoch, epochs))
                 print('Cur lr: {}'.format(cur_lr))
-                neptune.log_metric(f'boosting classifier {i_head} learning rate', current_step, cur_lr)
+                args.run[f'boosting classifier {i_head} learning rate'].log(cur_lr, step=current_step)
 
                 start_time = time.time()
                 model.train()
@@ -319,7 +329,7 @@ def sdn_train(args, model, data, epochs, optimization_params, lr_schedule_params
 
                 top1_test, top5_test = sdn_test(model, data.test_loader, device)
                 for i, test_acc in enumerate(top1_test):
-                    neptune.log_metric(f'run for head {i_head} test acc {i}', current_step, test_acc)
+                    args.run[f'run for head {i_head} test acc {i}'].log(test_acc, step=current_step)
                 print('Top1 Test accuracies: {}'.format(top1_test))
                 print('Top5 Test accuracies: {}'.format(top5_test))
                 end_time = time.time()
@@ -329,12 +339,12 @@ def sdn_train(args, model, data, epochs, optimization_params, lr_schedule_params
 
                 top1_train, top5_train = sdn_test(model, get_loader(data, augment), device)
                 for i, train_acc in enumerate(top1_train):
-                    neptune.log_metric(f'run for head {i_head} train acc {i} ', current_step, train_acc)
+                    args.run[f'run for head {i_head} train acc {i}'].log(train_acc, step=current_step)
                 print('Top1 Train accuracies: {}'.format(top1_train))
                 print('Top5 Train accuracies: {}'.format(top5_train))
                 metrics['train_top1_acc'].append(top1_train)
                 metrics['train_top5_acc'].append(top5_train)
-                
+
                 epoch_time = int(end_time - start_time)
                 metrics['epoch_times'].append(epoch_time)
                 print('Epoch took {} seconds.'.format(epoch_time))
@@ -367,36 +377,42 @@ def sdn_train(args, model, data, epochs, optimization_params, lr_schedule_params
                 optimizer, scheduler = af.get_full_optimizer(model, optimization_params, lr_schedule_params)
                 af.freeze(model, 'nothing')
             augment = model.augment_training
-            max_coeffs = np.array([0.15, 0.3, 0.45, 0.6, 0.75, 0.9])  # max tau_i --- C_i values
+            # max_coeffs = np.array([0.15, 0.3, 0.45, 0.6, 0.75, 0.9])  # max tau_i --- C_i values
+            num_ic = (model.num_output - 1)
+            max_coeffs = np.array([1 / num_ic] * num_ic)  # max tau_i --- C_i values
 
             for epoch in range(1, epochs + 1):
                 cur_lr = af.get_lr(optimizer)
                 print('\nEpoch: {}/{}'.format(epoch, epochs))
                 print('Cur lr: {}'.format(cur_lr))
-                neptune.log_metric(f'run {i_train} learning rate', current_step, cur_lr)
+                args.run[f'run {i_train} learning rate'].log(cur_lr, step=current_step)
 
                 if model.ic_only is False:
                     # calculate the IC coeffs for this epoch for the weighted objective function
                     cur_coeffs = 0.01 + epoch * (max_coeffs / epochs)  # to calculate the tau at the currect epoch
                     cur_coeffs = np.minimum(max_coeffs, cur_coeffs)
+                    cur_coeffs = max_coeffs
                     print('Cur coeffs: {}'.format(cur_coeffs))
 
                 start_time = time.time()
                 model.train()
                 loader = get_loader(data, augment)
+                cosine_sims = []
                 for i, batch in enumerate(loader):
                     if model.ic_only is False:
                         total_loss = sdn_training_step(args, optimizer, model, cur_coeffs, batch, device, run_i=i_train)
                     else:
-                        total_loss = sdn_ic_only_step(args, optimizer, model, batch, device, run_i=i_train)
+                        total_loss, cosine_sim = sdn_ic_only_step(args, optimizer, model, batch, device, run_i=i_train)
+                        cosine_sims += [cosine_sim]
 
                     if i % 100 == 0:
                         print('Loss: {}: '.format(total_loss))
+                # print("Cosine sim means!", np.mean(cosine_sims))
                 scheduler.step()
 
                 top1_test, top5_test = sdn_test(model, data.test_loader, device)
                 for i, test_acc in enumerate(top1_test):
-                    neptune.log_metric(f'run {i_train} test acc {i}', current_step, test_acc)
+                    args.run[f'run {i_train} test acc {i}'].log(float(test_acc), step=current_step)
                 print('Top1 Test accuracies: {}'.format(top1_test))
                 print('Top5 Test accuracies: {}'.format(top5_test))
                 end_time = time.time()
@@ -406,7 +422,7 @@ def sdn_train(args, model, data, epochs, optimization_params, lr_schedule_params
 
                 top1_train, top5_train = sdn_test(model, get_loader(data, augment), device)
                 for i, train_acc in enumerate(top1_train):
-                    neptune.log_metric(f'run {i_train} train acc {i} ', current_step, train_acc)
+                    args.run[f'run {i_train} train acc {i}'].log(float(train_acc), step=current_step)
                 print('Top1 Train accuracies: {}'.format(top1_train))
                 print('Top5 Train accuracies: {}'.format(top5_train))
                 # metrics['train_top1_acc'].append(top1_train)
@@ -424,13 +440,13 @@ def sdn_train(args, model, data, epochs, optimization_params, lr_schedule_params
 def sdn_test(model, loader, device='cpu'):
     model.eval()
     top1 = []
-    top5 = []
+    # top5 = []
 
     for _ in range(model.num_output):
         t1 = data.AverageMeter()
-        t5 = data.AverageMeter()
+        # t5 = data.AverageMeter()
         top1.append(t1)
-        top5.append(t5)
+        # top5.append(t5)
 
     with torch.no_grad():
         for batch in loader:
@@ -443,19 +459,21 @@ def sdn_test(model, loader, device='cpu'):
                 else:
                     cur_output = torch.stack(output[ensemble_id], 0)
                     cur_output = torch.softmax(cur_output, -1).mean(0)
-                prec1, prec5 = data.accuracy(cur_output, b_y, topk=(1, 5))
+                # prec1, prec5 = data.accuracy(cur_output, b_y, topk=(1, 5))
+                prec1 = data.accuracy(cur_output, b_y, topk=(1,))
                 top1[ensemble_id].update(prec1[0], b_x.size(0))
-                top5[ensemble_id].update(prec5[0], b_x.size(0))
+                # top5[ensemble_id].update(prec5[0], b_x.size(0))
 
     top1_accs = []
-    top5_accs = []
+    # top5_accs = []
 
     for output_id in range(model.num_output):
         top1_accs.append(top1[output_id].avg.data.cpu().numpy()[()])
-        top5_accs.append(top5[output_id].avg.data.cpu().numpy()[()])
+        # top5_accs.append(top5[output_id].avg.data.cpu().numpy()[()])
 
     model.train()
-    return top1_accs, top5_accs
+    # return top1_accs, top5_accs
+    return top1_accs, 0.0
 
 
 def sdn_get_detailed_results(model, loader, device='cpu'):
@@ -594,7 +612,7 @@ def cnn_training_step(args, model, optimizer, data, labels, device='cpu'):
     output = model(b_x)  # cnn final output
     criterion = CrossEntropyLoss()
     loss = criterion(output, b_y)  # cross entropy loss
-    neptune.log_metric('loss', current_step, loss)
+    args.run['loss'].log(loss, step=current_step)
     optimizer.zero_grad()  # clear gradients for this training step
     loss.backward()  # backpropagation, compute gradients
     optimizer.step()  # apply gradients
@@ -612,6 +630,9 @@ def cnn_train(args, model, data, epochs, optimization_params, lr_schedule_params
         'train_top5_acc': [],
         'lrs': []
     }
+    if args.relearn_final_layer:
+        print(f'Training only the (new) final layer/module!')
+        af.freeze(model, 'final_layer_only')
     optimizer, scheduler = af.get_full_optimizer(model, optimization_params, lr_schedule_params)
 
     for epoch in range(1, epochs + 1):
@@ -627,7 +648,7 @@ def cnn_train(args, model, data, epochs, optimization_params, lr_schedule_params
         model.train()
         print('Epoch: {}/{}'.format(epoch, epochs))
         print('Cur lr: {}'.format(cur_lr))
-        neptune.log_metric('learning rate', current_step, cur_lr)
+        args.run['learning rate'].log(cur_lr, step=current_step)
         for x, y in train_loader:
             cnn_training_step(args, model, optimizer, x, y, device)
         scheduler.step()
@@ -635,14 +656,14 @@ def cnn_train(args, model, data, epochs, optimization_params, lr_schedule_params
         end_time = time.time()
 
         top1_test, top5_test = cnn_test(model, data.test_loader, device)
-        neptune.log_metric('test acc', current_step, top1_test)
+        args.run['test acc'].log(float(top1_test), step=current_step)
         print('Top1 Test accuracy: {}'.format(top1_test))
         print('Top5 Test accuracy: {}'.format(top5_test))
         metrics['test_top1_acc'].append(top1_test)
         metrics['test_top5_acc'].append(top5_test)
 
         top1_train, top5_train = cnn_test(model, train_loader, device)
-        neptune.log_metric('train acc', current_step, top1_train)
+        args.run['train acc'].log(float(top1_train), step=current_step)
         print('Top1 Train accuracy: {}'.format(top1_train))
         print('Top5 Train accuracy: {}'.format(top5_train))
         metrics['train_top1_acc'].append(top1_train)
@@ -682,21 +703,22 @@ def cnn_test_time(model, loader, device='cpu'):
 def cnn_test(model, loader, device='cpu'):
     model.eval()
     top1 = data.AverageMeter()
-    top5 = data.AverageMeter()
+    # top5 = data.AverageMeter()
 
     with torch.no_grad():
         for batch in loader:
             b_x = batch[0].to(device)
             b_y = batch[1].to(device)
             output = model(b_x)
-            prec1, prec5 = data.accuracy(output, b_y, topk=(1, 5))
+            prec1 = data.accuracy(output, b_y, topk=(1,))
             top1.update(prec1[0], b_x.size(0))
-            top5.update(prec5[0], b_x.size(0))
+            # top5.update(prec5[0], b_x.size(0))
 
     top1_acc = top1.avg.data.cpu().numpy()[()]
-    top5_acc = top5.avg.data.cpu().numpy()[()]
+    # top5_acc = top5.avg.data.cpu().numpy()[()]
 
-    return top1_acc, top5_acc
+    # return top1_acc, top5_acc
+    return top1_acc, 0.0
 
 
 def cnn_get_confidence(model, loader, device='cpu'):
@@ -737,8 +759,11 @@ def run_ensb_train(args, model, data, epochs, optimization_params, lr_schedule_p
 
     # Enforcing that the device is CPU
     train_logits = model.train_logits[:, :, 0].cpu()
+    print(f'train_last_logits.size(): {model.train_last_logits.size()}')
     train_last_logits = model.train_last_logits.view(-1, 1, model.num_classes).cpu()
 
+    print(f'train_logits.size(): {train_logits.size()}')
+    print(f'train_last_logits.size(): {train_last_logits.size()}')
     train_logits = torch.cat([train_logits, train_last_logits], 1)
     train_labels = model.train_labels.cpu()
 
@@ -816,9 +841,9 @@ def run_ensb_train(args, model, data, epochs, optimization_params, lr_schedule_p
             test_acc = (test_scaled_preds == test_labels).float().mean(0)
             print(epoch, avg_loss / len(train_loader), test_acc)
 
-            neptune.log_metric(f'head_{model.head_idx}_train_loss', epoch, avg_loss / len(train_loader))
-            neptune.log_metric(f'head_{model.head_idx}_train_acc', epoch, acc.item())
-            neptune.log_metric(f'head_{model.head_idx}_test_acc', epoch, test_acc.item())
+            args.run[f'head_{model.head_idx}_train_loss'].log(avg_loss / len(train_loader), step=epoch)
+            args.run[f'head_{model.head_idx}_train_acc'].log(acc.item(), step=epoch)
+            args.run[f'head_{model.head_idx}_test_acc'].log(test_acc.item(), step=epoch)
             model = model.cuda()
 
         epoch_time = int(time.time() - start_time)
