@@ -17,8 +17,6 @@ To run the experiments:
 5. Set the `NEPTUNE_PROJECT` and `NEPTUNE_API_TOKEN` environment variables.
 6. Optionally fetch the TinyImageNet dataset. (Note, however, that the original link to that dataset is not valid
    anymore.)
-7. To run the supervised learning experiments, execute the `ztw/experiments/std_dev.sh`.
-8. To run the reinforcement learning experiments, execute the `ztw_rl/scripts/run_all.sh` script.
-9. To run the ablation experiments, edit and execute the `ztw/experiments/ensemble_comparison.sh`
-   and `ztw/experiments/pooling_comparison.sh` scripts.
-10. To generate the plots use the notebooks from the `ztw/notebooks` and `ztw_rl/notebooks` directories.
+7. To run the supervised learning experiments, cd into the `ztw` directory and execute the `./experiments/std_dev.sh` script.
+8. To run the reinforcement learning experiments, cd into the `ztw_rl` directory and execute the `./scripts/run_all.sh` script.
+9. To generate the plots use the notebooks from the `ztw/notebooks` and `ztw_rl/notebooks` directories.
