@@ -4,14 +4,13 @@
 
 import copy
 import itertools as it
+import matplotlib
+import numpy as np
 import os
 import os.path
 import pickle
 import random
 import sys
-
-import matplotlib
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -668,26 +667,3 @@ def freeze(model, mode, boosting=False):
             param.requires_grad = True
     else:
         raise ValueError(f'mode argument value incorrect: {mode}')
-
-
-def save_tinyimagenet_classname():
-    filename = 'tinyimagenet_classes'
-    dataset = get_dataset('tinyimagenet')
-    tinyimagenet_classes = {}
-
-    for index, name in enumerate(dataset.testset_paths.classes):
-        tinyimagenet_classes[index] = name
-
-    with open(filename, 'wb') as f:
-        pickle.dump(tinyimagenet_classes, f, pickle.HIGHEST_PROTOCOL)
-
-
-def get_tinyimagenet_classes(prediction=None):
-    filename = 'tinyimagenet_classes'
-    with open(filename, 'rb') as f:
-        tinyimagenet_classes = pickle.load(f)
-
-    if prediction is not None:
-        return tinyimagenet_classes[prediction]
-
-    return tinyimagenet_classes
