@@ -1,0 +1,11 @@
+torch==1.9.1
+torchaudio==0.9.1
+torchvision==0.10.1
+stable-baselines3[extra,tests,docs]>=1.0
+box2d-py==2.3.8
+pybullet
+gym-minigrid
+pytablewriter
+seaborn
+sb3-contrib>=1.0
+neptune-client

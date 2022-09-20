@@ -1,0 +1,17 @@
+name: ztw_nlp
+dependencies:
+  - python=3.9
+  - pip
+  - pip:
+    - datasets==2.4.0
+    - evaluate
+    - fvcore==0.1.5.post20220512
+    - pytest
+    - python-dotenv
+    - pytorch_lightning
+    - scipy
+    - sklearn
+    - seaborn
+    - torch==1.12
+    - git+https://github.com/huggingface/transformers
+    - wandb
